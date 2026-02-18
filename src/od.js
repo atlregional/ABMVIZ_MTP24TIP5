@@ -2,6 +2,10 @@
   'use strict';
   var exports = {};
 
+  function getVal(od, o, d, col) {
+    return (od[o] && od[o][d] && od[o][d][col]) ? od[o][d][col] : 0;
+  }
+
   function getMax(data, currentVar) {
     var max = -10000000;
     Object.keys(data).forEach(function(o) {
@@ -36,8 +40,8 @@
         // Build object from csv
         var od = {};
         csv.forEach(function(row) {
-          var o = +row.ORIG,
-              d = +row.DEST;
+          var o = String(row.ORIG).trim(),
+              d = String(row.DEST).trim();
 
           if (typeof od[o] === "undefined") {
             od[o] = {};
