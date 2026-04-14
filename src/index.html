@@ -33,6 +33,7 @@
   <script defer type="text/javascript" src="radar.js"></script>
   <script defer type="text/javascript" src="transit.js"></script>
   <script defer type="text/javascript" src="od.js"></script>
+  <script defer type="text/javascript" src="hexagon.js"></script>
   <link rel="shortcut icon" href="../img/arc_logo.ico">
   <link rel="stylesheet" href="../bower_components/bootstrap/dist/css/bootstrap.min.css" />
   <link rel="stylesheet" href="../bower_components/seiyria-bootstrap-slider/dist/css/bootstrap-slider.min.css" />
@@ -53,6 +54,7 @@
   <link rel="stylesheet" href="radar.css" />
   <link rel="stylesheet" href="transit.css" />
   <link rel="stylesheet" href="od.css" />
+  <link rel="stylesheet" href="hexagon.css" />
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
 </head>
 
@@ -139,13 +141,14 @@ body {
 <body>
   <div id="transitTooltip" style="opacity:0;"></div>
   <div id="odTooltip" style="opacity:0;"></div>
+  <div id="hexagonTooltip" style="opacity:0;"></div>
   <div class="container-fluid">
 
 <!-- NAVBAR -->
 </br>
     <nav class="navbar navbar-inverse navbar-fixed-top">
       <div class="navbar-header">
-        <a href="http://www.atlantaregional.org" style="padding-left:1em;padding-top:1.1em;margin-right:-.5em;" class="pull-left" target="_blank">
+        <a href="http://www.atlantaregional.com" style="padding-left:1em;padding-top:1.1em;margin-right:-.5em;" class="pull-left" target="_blank">
           <img width="40" height="17" src="../img/arc_logo.png">
         </a>
         <a class="navbar-brand" href="../index.html">ABMVIZ</a>
@@ -184,6 +187,9 @@ body {
     <a class="nav-link" data-toggle="tab" href="#Transit" role="tab" data-toggle="tab">Transit</a>
   <li class="nav-item">
     <a class="nav-link" data-toggle="tab" href="#OandD" role="tab" data-toggle="tab">Trip O&D</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-toggle="tab" href="#Hexagons" role="tab" data-toggle="tab">Trip Destinations</a>
   </li>
 </ul>
 
@@ -724,6 +730,45 @@ body {
       </div>
     </div>
   </div>
+  <div class="tab-pane" id="Hexagons" role="tabpanel">
+    </br>
+    <div id="hexagon" class="row">
+      <p class="text-center" style="font-size:2em"><strong>Trip Destinations by Hexagons</strong></p>
+      <p class="text-center" style="font-size:1.2em">An area-weighted allocation approach was applied to redistribute TAZ-level trips into the hexagonal grid. TAZ polygons were intersected with hexagons, and trips were proportionally assigned to each overlapping fragment based on the ratio of fragment area to total TAZ area. This method effectively smooths spatial variation by distributing zonal totals across space according to geographic overlap rather than relying on centroid-based assignment.</p>
+      <div class="col-xs-12">
+        <div class="row">
+          <div class="col-xs-12 col-sm-4">
+            <span style="font-size:12px;">Opacity:</span>
+            <input id="hexagonOpacitySlider" data-slider-id="hexagonOpacitySlider" type="text" data-slider-min="0" data-slider-max="1" data-slider-step="0.1" data-slider-value="0.8"/>
+          </div>
+          <div class="col-xs-12 col-sm-4 text-center">
+            <table width="100%">
+              <tr>
+                <td rowspan="2">Palette:</td>
+                <td>
+                  <div class="col-xs-10" style="margin-left: 0.5in;">
+                    <div class="row">
+                      <div id="hexagonColorRamp" class="ramp-selector">
+                        <!-- Color ramps will be added here -->
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+          <div class="col-xs-12 col-sm-4 text-right" style="margin-top: 0.2in;">
+            <label style="font-size:12px;"><input type="checkbox" id="hexagonBoundaries" checked> Show Boundaries</label>
+          </div>
+        </div> <!-- end row -->
+        <div class="col-xs-12" style="margin-top:10px;">
+          <strong>Legend</strong>
+        </div>
+        <div id="hexagonLegend" class="col-xs-12" style="margin-top:10px;"></div>
+        <div id="hexagonMap" class="col-xs-12" style="width:100%;height:70%;margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
 </div>
 <!-- End of Tabs -->
 </body>
@@ -732,7 +777,7 @@ body {
 <!-- Footer -->
 <div class="footer">
     <div class="container" display="inline" style="position:relative; padding:5px 0px 5px 0px">
-      <span style="color:#9D9D9D; text-align:left"><i class="fa fa-copyright" aria-hidden="true"></i> ARC 2017</span>
+      <span style="color:#9D9D9D; text-align:left"><i class="fa fa-copyright" aria-hidden="true"></i> ARC 2026</span>
       <span style="position:absolute;right:0;text-align:right"><a href="https://github.com/atlregional/ABMVIZ" style="color:#9D9D9D" target="_blank"><i class="fa fa-github-alt" aria-hidden="true"></i> Source Code</a></span>
     </div>
 
