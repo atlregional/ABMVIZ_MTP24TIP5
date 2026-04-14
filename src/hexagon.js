@@ -187,6 +187,9 @@
       if (hexLayer.getBounds && hexLayer.getBounds().isValid()) {
         map.fitBounds(hexLayer.getBounds());
       }
+      setTimeout(function() {
+        map.invalidateSize();
+      }, 200);
 
       function updateStyle() {
         hexLayer.setStyle(function(feature) {
