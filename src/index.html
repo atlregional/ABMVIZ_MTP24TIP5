@@ -737,35 +737,33 @@ body {
       <p class="text-center" style="font-size:1.2em">An area-weighted allocation approach was applied to redistribute TAZ-level trips into the hexagonal grid. TAZ polygons were intersected with hexagons, and trips were proportionally assigned to each overlapping fragment based on the ratio of fragment area to total TAZ area. This method effectively smooths spatial variation by distributing zonal totals across space according to geographic overlap rather than relying on centroid-based assignment.</p>
       <div class="col-xs-12">
         <div class="row">
-          <div class="col-xs-12 col-sm-4">
+          <div class="col-xs-12 col-sm-3" style="padding: 0 10px;">
             <span style="font-size:12px;">Opacity:</span>
             <input id="hexagonOpacitySlider" data-slider-id="hexagonOpacitySlider" type="text" data-slider-min="0" data-slider-max="1" data-slider-step="0.1" data-slider-value="0.8"/>
           </div>
-          <div class="col-xs-12 col-sm-4 text-center">
-            <table width="100%">
-              <tr>
-                <td rowspan="2">Palette:</td>
-                <td>
-                  <div class="col-xs-10" style="margin-left: 0.5in;">
-                    <div class="row">
-                      <div id="hexagonColorRamp" class="ramp-selector">
-                        <!-- Color ramps will be added here -->
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </table>
+          <div class="col-xs-12 col-sm-3 text-center" style="padding: 0 10px;">
+            <span style="font-size:12px;">Palette:</span>
+            <div id="hexagonColorRamp" class="ramp-selector" style="margin-left: 20px;">
+              <!-- Color ramps will be added here -->
+            </div>
           </div>
-          <div class="col-xs-12 col-sm-4 text-right" style="margin-top: 0.2in;">
+          <div class="col-xs-12 col-sm-3 text-right" style="padding: 0 10px; margin-top: 0.2in;">
             <label style="font-size:12px;"><input type="checkbox" id="hexagonBoundaries" checked> Show Boundaries</label>
+          </div>
+          <div class="col-xs-12 col-sm-3" style="padding: 0 10px;">
+            <span style="font-size:12px;">Base Map:</span>
+            <select id="hexagonBaseMap" class="form-control">
+              <option value="osm" selected>OpenStreetMap</option>
+              <option value="esri">Esri Light Gray</option>
+              <option value="carto">CartoDB Positron</option>
+            </select>
           </div>
         </div> <!-- end row -->
         <div class="col-xs-12" style="margin-top:10px;">
           <strong>Legend</strong>
         </div>
         <div id="hexagonLegend" class="col-xs-12" style="margin-top:10px;"></div>
-        <div id="hexagonMap" class="col-xs-12" style="width:100%;height:520px;margin-top:10px;"></div>
+        <div id="hexagonMap" class="col-xs-12" style="width:1180px;height:792px;margin-top:10px;"></div>
       </div>
     </div>
   </div>
