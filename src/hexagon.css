@@ -1,0 +1,62 @@
+#hexagon {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.hexagonInput {
+  margin-bottom: 10px;
+}
+
+#hexagonOpacitySlider {
+  border: 0px;
+  width: 100%;
+}
+
+#hexagonMap {
+  flex: 1;
+  min-height: 500px;
+}
+
+#hexagonMap .leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+
+#hexagonLegend {
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+#hexagonTooltip {
+  position: absolute;
+  text-align: center;
+  min-width: 60px;
+  min-height: 23px;
+  padding: 5px 10px;
+  font: 12px sans-serif;
+  background: #000;
+  color: #fff;
+  border: 0px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.ramp-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+}
+
+.ramp {
+  display: flex;
+  height: 20px;
+  cursor: pointer;
+  border: 1px solid #ccc;
+}
+
+.ramp.selected {
+  border: 2px solid #000;
+}
