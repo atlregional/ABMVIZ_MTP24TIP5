@@ -734,7 +734,17 @@ body {
     </br>
     <div id="hexagon" class="row">
       <p class="text-center" style="font-size:2em"><strong>Trip Destinations by Hexagons</strong></p>
-      <p class="text-center" style="font-size:1.2em">An area-weighted allocation approach was applied to redistribute TAZ-level trips into the hexagonal grid. TAZ polygons were intersected with hexagons, and trips were proportionally assigned to each overlapping fragment based on the ratio of fragment area to total TAZ area. This method effectively smooths spatial variation by distributing zonal totals across space according to geographic overlap rather than a simple spatial join of TAZs' centroids to hexagons.</p>
+      <p class="text-center" style="font-size:1.2em">
+      To distribute trips more accurately from Traffic Analysis Zones (TAZs) to the analysis grid, an area-weighted allocation method was applied. TAZ polygons were intersected with the 1-mile hexagon grid to create polygon fragments representing the spatial overlap between each TAZ and hexagon. For each fragment, trips were proportionally allocated based on the ratio of the fragment area to the total TAZ area:
+      </p>
+
+      <p class="text-center" style="font-size:1.6em; font-weight:bold;">
+      Allocated Trips = TAZ Trips × (Fragment Area / TAZ Area)
+      </p>
+
+    <p class="text-center" style="font-size:1.2em">
+      The allocated trips from all fragments within each hexagon were then summed to estimate the total number of trips associated with that hexagon. This approach ensures that trip totals are distributed spatially according to the actual geographic overlap between TAZs and hexagonal grid cells rather than relying on centroid-based assignment.
+    </p>
       <div class="col-xs-12">
         <div class="row">
           <div class="col-xs-12 col-sm-3">
@@ -759,11 +769,12 @@ body {
             </select>
           </div>
         </div> <!-- end row -->
+        <div class="col-xs-12" style="margin-top:10px;">
+          <strong>Legend</strong>
+        </div>
+        <div id="hexagonLegend" class="col-xs-12" style="margin-top:10px;"></div>
         <div class="col-xs-12" style="text-align: center;">
-          <div style="width:1180px; margin: 0 auto;">
-            <div id="hexagonLegend" style="margin-top:10px;"></div>
-            <div id="hexagonMap" style="width:1180px;height:792px;margin-top:10px;"></div>
-          </div>
+          <div id="hexagonMap" style="width:1180px;height:792px;margin-top:10px;display: inline-block;"></div>
         </div>
       </div>
     </div>
