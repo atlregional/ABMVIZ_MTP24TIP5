@@ -734,7 +734,7 @@ body {
     </br>
     <div id="hexagon" class="row">
       <p class="text-center" style="font-size:2em"><strong>Trip Destinations by Hexagons</strong></p>
-      <p class="text-center" style="font-size:1.2em">An area-weighted allocation approach was applied to redistribute TAZ-level trips into the hexagonal grid. TAZ polygons were intersected with hexagons, and trips were proportionally assigned to each overlapping fragment based on the ratio of fragment area to total TAZ area. This method effectively smooths spatial variation by distributing zonal totals across space according to geographic overlap rather than relying on centroid-based assignment.</p>
+      <p class="text-center" style="font-size:1.2em">An area-weighted allocation approach was applied to redistribute TAZ-level trips into the hexagonal grid. TAZ polygons were intersected with hexagons, and trips were proportionally assigned to each overlapping fragment based on the ratio of fragment area to total TAZ area. This method effectively smooths spatial variation by distributing zonal totals across space according to geographic overlap rather than a simple spatial join of TAZs' centroids to hexagons.</p>
       <div class="col-xs-12">
         <div class="row">
           <div class="col-xs-12 col-sm-3">
