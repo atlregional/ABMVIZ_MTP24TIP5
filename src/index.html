@@ -702,27 +702,29 @@ body {
     </div>
   </div>
 
-   <!-- Eigth Tab-->
+   <!-- eigth Tab-->
   <div class="tab-pane" id="CountyOandD" role="tabpanel">
     </br>
     <div id="countyOd" class="row">
       <p class="text-center" style="font-size:2em"><strong>TRIPS BY COUNTY,</strong> by Mode</p>
       <div class="col-xs-12">
         <div class="row" style="margin-bottom:10px;">
+          
           <div class="col-xs-12 col-sm-3">
-            <select class="form-control countyOdInput" id="countyOdTripType">
-              <option value="all" selected="selected">All (work and non-work trips)</option>
-              <option value="wrk">Work trips</option>
-              <option value="nwk">Non-work trips</option>
+            <select class="form-control countyOdInput" id="countyOdAttribute">
+              <option value="ALL" selected="selected">All Trips</option>
+              <option value="SOV">Single occupancy vehicles</option>
+              <option value="HOV">High occupancy vehicles</option>
+              <option value="TRN">Transit</option>
+              <option value="WALK">Walk</option>
+              <option value="BIKE">Bike</option>
             </select>
           </div>
-          <div class="col-xs-12 col-sm-3">
-            <select class="form-control countyOdInput" id="countyOdMode">
-              <option value="all" selected="selected">All (SOV, HOV, and transit)</option>
-              <option value="sov">Single occupancy vehicles</option>
-              <option value="hov">High occupancy vehicles</option>
-              <option value="trn">Transit</option>
-            </select>
+            <div class="col-xs-12 col-sm-3 text-center">
+              <span style="font-size:12px; display:block; margin-bottom:4px;">Palette:</span>
+              <div id="countyOdColorRamp" class="ramp-selector" style="display:inline-block;">
+              <!-- Color ramps will be added here -->
+            </div>
           </div>
           <div class="col-xs-12 col-sm-3">
             <span style="font-size:12px;">Line thickness:</span>
