@@ -472,6 +472,10 @@
         p.dName = firstDefined(p, ['dName', 'destination_county', 'Destination_County']) || countyNameByFips[p.d] || p.d;
       });
 
+      desireFeatures.sort(function(a, b) {
+        return getBidirectionalValue(a, odData) - getBidirectionalValue(b, odData);
+      });
+
       if (window.countyOdMapInstance) {
         window.countyOdMapInstance.off();
         window.countyOdMapInstance.remove();
