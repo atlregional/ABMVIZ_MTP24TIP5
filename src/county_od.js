@@ -145,6 +145,11 @@
       return Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 
+    function roundToThousands(num) {
+      if (num === null || num === undefined || isNaN(num)) return 0;
+      return Math.round(num / 1000) * 1000;
+    }
+
     function loadWithFallback(loader, mainPath, fallbackPath, callback) {
       loader(mainPath, function(err, data) {
         if (!err && data) {
@@ -283,7 +288,7 @@
         .style('font-size', '12px')
         .style('font-weight', 'bold')
         .text(function(d, i) {
-          return formatNumber(breaks[i]) + ' - ' + formatNumber(breaks[i + 1]);
+          return formatNumber(roundToThousands(breaks[i])) + ' - ' + formatNumber(roundToThousands(breaks[i + 1]));
         });
     }
 
@@ -408,17 +413,16 @@
         if (!o || !d || o === d) return;
 
         if (!odData[o]) odData[o] = {};
-        odData[o][d] = {};
 
+        var rowValues = {};
         numericColumns.forEach(function(col) {
-          odData[o][d][col] = +row[col] || 0;
+          rowValues[col] = Math.round(+row[col] || 0);
         });
 
-        // NOW countyNameByFips is defined
-        odData[o][d].origin_county = countyNameByFips[o] || firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
-        odData[o][d].destination_county = countyNameByFips[d] || firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
-        
-        console.log('OD Record:', o, '→', d, 'Value:', odData[o][d][selectedAttribute]);
+        rowValues.origin_county = countyNameByFips[o] || firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
+        rowValues.destination_county = countyNameByFips[d] || firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
+
+        odData[o][d] = rowValues;
       });
 
       var desireFeatures = getTopoFeatures(desirelinesTopo);
