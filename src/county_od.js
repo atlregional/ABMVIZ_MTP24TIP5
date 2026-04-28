@@ -1,99 +1,15 @@
 (function (d3, abmviz_utilities) {
   'use strict';
 
-  function asId(v) {
-    if (v === undefined || v === null || v === '') return null;
-    var s = String(v).trim();
-    s = s.replace(/^=(?:"([^"]+)"|(.+))$/, '$1$2');
-    s = s.replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, '');
-    if (/^\d+\.0+$/.test(s)) s = String(parseInt(s, 10));
-    return s;
-  }
-
-  function normalizeFips(v) {
-    var s = asId(v);
-    if (!s) return null;
-    return s.padStart(5, '0');
-  }
-
-  function firstDefined(obj, keys) {
-    for (var i = 0; i < keys.length; i += 1) {
-      if (
-        obj[keys[i]] !== undefined &&
-        obj[keys[i]] !== null &&
-        obj[keys[i]] !== ''
-      ) {
-        return obj[keys[i]];
-      }
-    }
-    return undefined;
-  }
-
-  function getNumericValue(obj, keys) {
-    for (var i = 0; i < keys.length; i += 1) {
-      var v = obj[keys[i]];
-      if (v !== undefined && v !== null && v !== '') {
-        var n = +v;
-        if (!isNaN(n)) return n;
-      }
-    }
-    return null;
-  }
-
-  function prettyLabel(col) {
-    var labels = {
-      ALLALL: 'All Trips',
-      WRKALL: 'Work Trips',
-      NWKALL: 'Non-Work Trips',
-      ALLSOV: 'All SOV',
-      ALLHOV: 'All HOV',
-      ALLTRN: 'All Transit',
-      ALLWALK: 'All Walk',
-      ALLBIKE: 'All Bike'
-    };
-
-    return labels[col] || col.replace(/_/g, ' ');
-  }
-
-  function getMax(data, currentVar) {
-    var max = 0;
-
-    Object.keys(data).forEach(function (o) {
-      Object.keys(data[o]).forEach(function (d) {
-        var a = (data[o] && data[o][d] && data[o][d][currentVar]) || 0;
-        var b = (data[d] && data[d][o] && data[d][o][currentVar]) || 0;
-        max = Math.max(max, a + b);
-      });
-    });
-
-    return max;
-  }
-
-  function redrawMap(map, countyFeatures, updateTransform, updateDesireLines) {
-    map.invalidateSize();
-
-    if (countyFeatures && countyFeatures.length) {
-      var tempLayer = L.geoJson(countyFeatures);
-      var bounds = tempLayer.getBounds();
-
-      if (bounds && bounds.isValid()) {
-        map.fitBounds(bounds);
-      }
-    }
-
-    setTimeout(function () {
-      map.invalidateSize();
-      updateTransform();
-      updateDesireLines();
-    }, 100);
-  }
-
   (function createCountyOD() {
+    var divID = 'countyOd';
     var containerID = 'countyOdMap';
-    var maxLineWidthPixels = 10;
 
-    var w = d3.scaleLinear().range([0, maxLineWidthPixels]);
-    var op = d3.scaleLinear().range([0.15, 1]);
+    var selectedColorRampIndex = 1;
+    var maxLineWidth = 10;
+    var currentTileLayer;
+    var countyLineLayer;
+    var selectedAttribute = 'ALLALL';
 
     var palette = [
       [
@@ -122,320 +38,357 @@
       ]
     ];
 
-    var currentPaletteIndex = 1;
-    var colorScale = d3.scaleQuantize().range(palette[currentPaletteIndex]);
+    var scenario = abmviz_utilities.GetURLParameter('scenario');
+    var csvPath = '../data/' + scenario + '/county_desirelines.csv';
+    var countiesPath = '../data/' + scenario + '/counties.topojson';
+    var fallbackCountiesPath = '../data/counties.topojson';
+    var desirelinesPath = '../data/' + scenario + '/county_desirelines.topojson';
+    var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
 
-    var scenario = abmviz_utilities.GetURLParameter('scenario') || '';
-    var scenarioPath = scenario ? '../data/' + scenario + '/' : '../data/';
+    function normalizeFips(v) {
+      if (v === undefined || v === null || v === '') return null;
+      var s = String(v).trim();
+      if (/^\d+\.0+$/.test(s)) s = String(parseInt(s, 10));
+      return s.padStart(5, '0');
+    }
 
-    var csvPath =
-      scenarioPath +
-      'county_desirelines.csv?v=' +
-      encodeURIComponent(scenario || 'default') +
-      '&t=' +
-      Date.now();
+    function firstDefined(obj, keys) {
+      for (var i = 0; i < keys.length; i += 1) {
+        if (obj[keys[i]] !== undefined && obj[keys[i]] !== null && obj[keys[i]] !== '') {
+          return obj[keys[i]];
+        }
+      }
+      return undefined;
+    }
 
-    var countiesPath = scenarioPath + 'counties.topojson?v=' + Date.now();
-    var desirelinesPath =
-      scenarioPath + 'county_desirelines.topojson?v=' + Date.now();
+    function prettyLabel(col) {
+      var labels = {
+        ALLALL: 'All Trips',
+        WRKALL: 'Work Trips',
+        NWKALL: 'Non-Work Trips',
+        ALLSOV: 'SOV',
+        ALLHOV: 'HOV',
+        ALLTRN: 'Transit',
+        ALLWALK: 'Walk',
+        ALLBIKE: 'Bike'
+      };
 
-    function loadWithCallback(loader, path, allowMissing) {
-      return new Promise(function (resolve, reject) {
-        loader(path, function (err, data) {
-          if (err) {
-            if (allowMissing) {
-              resolve(null);
-            } else {
-              reject(err);
-            }
-          } else {
-            resolve(data);
-          }
+      return labels[col] || col;
+    }
+
+    function formatNumber(num) {
+      return Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    function loadWithFallback(loader, mainPath, fallbackPath, callback) {
+      loader(mainPath, function(err, data) {
+        if (!err && data) {
+          callback(null, data);
+          return;
+        }
+
+        if (!fallbackPath) {
+          callback(err, null);
+          return;
+        }
+
+        loader(fallbackPath, function(err2, data2) {
+          callback(err2, data2);
         });
       });
     }
 
-    function loadJson(path, allowMissing) {
-      return loadWithCallback(d3.json, path, allowMissing);
+    function getTopoFeatures(topo) {
+      if (!topo) return [];
+
+      if (topo.type === 'FeatureCollection') {
+        return topo.features || [];
+      }
+
+      if (topo.objects) {
+        var key = topo.objects.transit ? 'transit' : Object.keys(topo.objects)[0];
+        return topojson.feature(topo, topo.objects[key]).features || [];
+      }
+
+      return [];
     }
 
-    function loadTopoJsonWithFallback(path, fallbackPath, allowMissingFallback) {
-      return loadJson(path, true).then(function (data) {
-        return data || loadJson(fallbackPath, allowMissingFallback);
+    function getClassColor(value, breaks) {
+      if (value === null || value === undefined || isNaN(value)) {
+        return '#f0f0f0';
+      }
+
+      for (var i = 0; i < breaks.length - 1; i += 1) {
+        if (value <= breaks[i + 1] || i === breaks.length - 2) {
+          return palette[selectedColorRampIndex][i];
+        }
+      }
+
+      return palette[selectedColorRampIndex][palette[selectedColorRampIndex].length - 1];
+    }
+
+    function getLineWeight(value, maxValue) {
+      if (!maxValue || maxValue <= 0 || !value) return 0;
+      return Math.max(0.5, (value / maxValue) * maxLineWidth);
+    }
+
+    function getBidirectionalValue(feature, odData) {
+      var p = feature.properties || {};
+      var o = normalizeFips(firstDefined(p, ['o', 'ORIG_FIPS', 'ORIG']));
+      var d = normalizeFips(firstDefined(p, ['d', 'DEST_FIPS', 'DEST']));
+
+      var a = odData[o] && odData[o][d] ? odData[o][d][selectedAttribute] || 0 : 0;
+      var b = odData[d] && odData[d][o] ? odData[d][o][selectedAttribute] || 0 : 0;
+
+      return a + b;
+    }
+
+    function getDirectionalValue(odData, o, d) {
+      return odData[o] && odData[o][d] ? odData[o][d][selectedAttribute] || 0 : 0;
+    }
+
+    function buildBreaks(values) {
+      var validValues = values.filter(function(v) {
+        return v !== null && v !== undefined && !isNaN(v) && v > 0;
       });
+
+      if (!validValues.length) {
+        return [0, 1];
+      }
+
+      var serie = new geostats(validValues);
+
+      try {
+        return serie.getClassJenks(10);
+      } catch (e) {
+        var max = d3.max(validValues);
+        return d3.range(0, 11).map(function(i) {
+          return (max / 10) * i;
+        });
+      }
     }
 
-    function buildPaletteSelector(updateDesireLines) {
-      var ramp = d3.select('#countyOdColorRamp');
+    function updateLegend(breaks) {
+      var legendDiv = d3.select('#countyOdLegend');
 
-      if (ramp.empty()) return;
+      if (legendDiv.empty()) return;
 
-      ramp.selectAll('*').remove();
+      legendDiv.html('');
 
-      var items = ramp
-        .selectAll('.county-od-ramp')
-        .data(palette)
-        .enter()
-        .append('div')
-        .attr('class', 'county-od-ramp')
-        .style('display', 'inline-block')
-        .style('margin', '2px')
-        .style('cursor', 'pointer')
-        .style('border', function (d, i) {
-          return i === currentPaletteIndex
-            ? '2px solid black'
-            : '1px solid #ccc';
-        })
-        .on('click', function (d, i) {
-          currentPaletteIndex = i;
-          colorScale.range(palette[currentPaletteIndex]);
-
-          d3.selectAll('.county-od-ramp')
-            .style('border', function (x, j) {
-              return j === currentPaletteIndex
-                ? '2px solid black'
-                : '1px solid #ccc';
-            });
-
-          updateDesireLines();
-        });
-
-      items
-        .selectAll('span')
-        .data(function (d) {
-          return d;
-        })
-        .enter()
-        .append('span')
-        .style('display', 'inline-block')
-        .style('width', '12px')
-        .style('height', '14px')
-        .style('background-color', function (d) {
-          return d;
-        });
-    }
-
-    var loadData = Promise.all([
-      loadWithCallback(d3.csv, csvPath, false),
-      loadTopoJsonWithFallback(
-        countiesPath,
-        '../data/counties.topojson?v=' + Date.now(),
-        false
-      ),
-      loadTopoJsonWithFallback(
-        desirelinesPath,
-        '../data/county_desirelines.topojson?v=' + Date.now(),
-        true
-      )
-    ]);
-
-    loadData.then(function (results) {
-      var csv = results[0];
-      var countiesTopo = results[1];
-      var desirelinesTopo = results[2];
-
-      if (!csv || !csv.length) {
-        console.error('County OD CSV is empty.');
+      if (!breaks || breaks.length < 2) {
+        legendDiv.text('No legend available');
         return;
       }
 
-      var idColumns = {
-        ORIG_FIPS: true,
-        DEST_FIPS: true,
-        origin_county: true,
-        destination_county: true,
-        Origin_Long: true,
-        Origin_Lat: true,
-        Dest_Long: true,
-        Dest_Lat: true,
-        od_id: true
-      };
+      var rectWidth = 110;
+      var li = { h: 32, s: 5, r: 3 };
+      var totalLegendWidth = (breaks.length - 1) * (rectWidth + li.s);
 
-      var numericColumns = csv.columns.filter(function (col) {
+      var legend = legendDiv
+        .append('svg')
+        .attr('width', totalLegendWidth)
+        .attr('height', li.h);
+
+      var legendGroups = legend
+        .selectAll('g')
+        .data(d3.range(breaks.length - 1))
+        .enter()
+        .append('g')
+        .attr('transform', function(d, i) {
+          return 'translate(' + i * (rectWidth + li.s) + ',0)';
+        });
+
+      legendGroups
+        .append('rect')
+        .attr('rx', li.r)
+        .attr('ry', li.r)
+        .attr('width', rectWidth)
+        .attr('height', li.h)
+        .style('fill', function(d, i) {
+          return palette[selectedColorRampIndex][i];
+        });
+
+      legendGroups
+        .append('text')
+        .attr('x', rectWidth / 2)
+        .attr('y', li.h / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'middle')
+        .style('fill', 'white')
+        .style('font-size', '12px')
+        .style('font-weight', 'bold')
+        .text(function(d, i) {
+          return formatNumber(breaks[i]) + ' - ' + formatNumber(breaks[i + 1]);
+        });
+    }
+
+    function buildPaletteSelector(updateStyle) {
+      var rampContainer = d3.select('#countyOdColorRamp');
+
+      if (rampContainer.empty()) return;
+
+      rampContainer.selectAll('*').remove();
+
+      var rampClasses = ['Blues', 'Oranges', 'Greens', 'Reds', 'ReversedBlues', 'Teals'];
+
+      palette.forEach(function(ramp, i) {
+        var rampDiv = rampContainer
+          .append('div')
+          .attr('class', 'ramp ' + rampClasses[i] + (i === selectedColorRampIndex ? ' selected' : ''))
+          .style('display', 'inline-block')
+          .style('cursor', 'pointer')
+          .style('margin', '2px')
+          .style('border', i === selectedColorRampIndex ? '2px solid black' : '1px solid #ccc')
+          .on('click', function() {
+            d3.selectAll('#countyOdColorRamp .ramp')
+              .classed('selected', false)
+              .style('border', '1px solid #ccc');
+
+            d3.select(this)
+              .classed('selected', true)
+              .style('border', '2px solid black');
+
+            selectedColorRampIndex = i;
+            updateStyle();
+          });
+
+        var svg = rampDiv.append('svg').attr('width', 60).attr('height', 15);
+        var colors = ramp.slice(0, 4);
+
+        colors.forEach(function(color, j) {
+          svg
+            .append('rect')
+            .attr('fill', color)
+            .attr('width', 15)
+            .attr('height', 15)
+            .attr('x', j * 15);
+        });
+      });
+    }
+
+    function initMap(csv, countiesTopo, desirelinesTopo) {
+      if (!csv || !csv.length) {
+        console.error('No county OD records loaded');
+        d3.select('#' + divID).remove();
+        return;
+      }
+
+      var numericColumns = csv.columns.filter(function(col) {
+        var idColumns = {
+          ORIG_FIPS: true,
+          DEST_FIPS: true,
+          origin_county: true,
+          destination_county: true,
+          Origin_Long: true,
+          Origin_Lat: true,
+          Dest_Long: true,
+          Dest_Lat: true,
+          od_id: true
+        };
+
         if (idColumns[col]) return false;
 
-        return csv.some(function (row) {
-          var v = row[col];
-          return v !== undefined && v !== null && v !== '' && !isNaN(+v);
+        return csv.some(function(row) {
+          return row[col] !== undefined && row[col] !== null && row[col] !== '' && !isNaN(+row[col]);
         });
       });
 
       if (!numericColumns.length) {
-        console.error('No numeric columns found in county_desirelines.csv.');
+        console.error('No numeric columns found in county_desirelines.csv');
+        d3.select('#' + divID).remove();
         return;
       }
 
-      var defaultColumn =
-        numericColumns.indexOf('ALLALL') >= 0 ? 'ALLALL' : numericColumns[0];
+      selectedAttribute = numericColumns.indexOf('ALLALL') >= 0 ? 'ALLALL' : numericColumns[0];
 
-      var dropdown = d3.select('#countyOdAttribute');
+      var attributeSelect = d3.select('#countyOdAttribute');
+      attributeSelect.selectAll('option').remove();
 
-      if (dropdown.empty()) {
-        console.error('countyOdAttribute dropdown not found in HTML.');
-        return;
-      }
-
-      dropdown.classed('countyOdInput', true);
-      dropdown.selectAll('option').remove();
-
-      dropdown
+      attributeSelect
         .selectAll('option')
         .data(numericColumns)
         .enter()
         .append('option')
-        .attr('value', function (d) {
-          return d;
-        })
-        .property('selected', function (d) {
-          return d === defaultColumn;
-        })
-        .text(function (d) {
-          return prettyLabel(d);
-        });
+        .attr('value', function(d) { return d; })
+        .property('selected', function(d) { return d === selectedAttribute; })
+        .text(function(d) { return prettyLabel(d); });
 
-      var od = {};
+      var odData = {};
 
-      csv.forEach(function (row) {
-        var o = normalizeFips(
-          firstDefined(row, ['ORIG_FIPS', 'origin_fips', 'ORIG', 'o'])
-        );
-
-        var d = normalizeFips(
-          firstDefined(row, ['DEST_FIPS', 'destination_fips', 'DEST', 'd'])
-        );
+      csv.forEach(function(row) {
+        var o = normalizeFips(firstDefined(row, ['ORIG_FIPS', 'origin_fips', 'ORIG', 'o']));
+        var d = normalizeFips(firstDefined(row, ['DEST_FIPS', 'destination_fips', 'DEST', 'd']));
 
         if (!o || !d || o === d) return;
 
-        if (!od[o]) od[o] = {};
-        od[o][d] = {};
+        if (!odData[o]) odData[o] = {};
+        odData[o][d] = {};
 
-        numericColumns.forEach(function (col) {
-          od[o][d][col] = +row[col] || 0;
+        numericColumns.forEach(function(col) {
+          odData[o][d][col] = +row[col] || 0;
         });
 
-        od[o][d].origin_county =
-          firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
-
-        od[o][d].destination_county =
-          firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
+        odData[o][d].origin_county = firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
+        odData[o][d].destination_county = firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
       });
 
-      var countyFeatures = [];
-
-      if (countiesTopo.type === 'FeatureCollection') {
-        countyFeatures = countiesTopo.features || [];
-      } else if (countiesTopo.objects) {
-        var countyKey = Object.keys(countiesTopo.objects)[0];
-        countyFeatures = topojson.feature(
-          countiesTopo,
-          countiesTopo.objects[countyKey]
-        ).features;
-      }
-
+      var countyFeatures = getTopoFeatures(countiesTopo);
       var countyNameByFips = {};
 
-      countyFeatures.forEach(function (f) {
+      countyFeatures.forEach(function(f) {
         var p = f.properties || {};
         var fips = normalizeFips(firstDefined(p, ['FIPS', 'GEOID', 'COUNTYFP']));
-        var name =
-          firstDefined(p, ['NAME', 'name', 'County', 'COUNTY', 'NAMELSAD']) ||
-          fips;
+        var name = firstDefined(p, ['NAME', 'name', 'County', 'COUNTY', 'NAMELSAD']) || fips;
 
         if (fips) countyNameByFips[fips] = name;
       });
 
-      var desireFeatures = [];
-
-      if (desirelinesTopo) {
-        if (desirelinesTopo.type === 'FeatureCollection') {
-          desireFeatures = desirelinesTopo.features || [];
-        } else if (desirelinesTopo.objects) {
-          var desireKey = Object.keys(desirelinesTopo.objects)[0];
-          desireFeatures = topojson.feature(
-            desirelinesTopo,
-            desirelinesTopo.objects[desireKey]
-          ).features;
-        }
-      }
+      var desireFeatures = getTopoFeatures(desirelinesTopo);
 
       if (!desireFeatures.length) {
-        desireFeatures = csv
-          .map(function (row) {
-            var o = normalizeFips(
-              firstDefined(row, ['ORIG_FIPS', 'origin_fips', 'ORIG', 'o'])
-            );
+        desireFeatures = csv.map(function(row) {
+          var o = normalizeFips(firstDefined(row, ['ORIG_FIPS', 'origin_fips', 'ORIG', 'o']));
+          var d = normalizeFips(firstDefined(row, ['DEST_FIPS', 'destination_fips', 'DEST', 'd']));
 
-            var d = normalizeFips(
-              firstDefined(row, ['DEST_FIPS', 'destination_fips', 'DEST', 'd'])
-            );
+          var origLon = +firstDefined(row, ['Origin_Long', 'origin_long', 'Orig_Long']);
+          var origLat = +firstDefined(row, ['Origin_Lat', 'origin_lat', 'Orig_Lat']);
+          var destLon = +firstDefined(row, ['Dest_Long', 'dest_long', 'Dest_Long']);
+          var destLat = +firstDefined(row, ['Dest_Lat', 'dest_lat', 'Dest_Lat']);
 
-            var origLon = getNumericValue(row, [
-              'Origin_Long',
-              'origin_long',
-              'Orig_Long'
-            ]);
+          if (!o || !d || o === d || isNaN(origLon) || isNaN(origLat) || isNaN(destLon) || isNaN(destLat)) {
+            return null;
+          }
 
-            var origLat = getNumericValue(row, [
-              'Origin_Lat',
-              'origin_lat',
-              'Orig_Lat'
-            ]);
-
-            var destLon = getNumericValue(row, [
-              'Dest_Long',
-              'dest_long',
-              'Dest_Long'
-            ]);
-
-            var destLat = getNumericValue(row, [
-              'Dest_Lat',
-              'dest_lat',
-              'Dest_Lat'
-            ]);
-
-            if (
-              !o ||
-              !d ||
-              o === d ||
-              origLon === null ||
-              origLat === null ||
-              destLon === null ||
-              destLat === null
-            ) {
-              return null;
+          return {
+            type: 'Feature',
+            properties: {
+              o: o,
+              d: d,
+              oName: firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || countyNameByFips[o] || o,
+              dName: firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || countyNameByFips[d] || d
+            },
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [origLon, origLat],
+                [destLon, destLat]
+              ]
             }
-
-            return {
-              type: 'Feature',
-              properties: {
-                o: o,
-                d: d,
-                oName:
-                  firstDefined(row, ['origin_county', 'oName', 'Origin_County']) ||
-                  countyNameByFips[o] ||
-                  o,
-                dName:
-                  firstDefined(row, [
-                    'destination_county',
-                    'dName',
-                    'Destination_County'
-                  ]) ||
-                  countyNameByFips[d] ||
-                  d
-              },
-              geometry: {
-                type: 'LineString',
-                coordinates: [
-                  [origLon, origLat],
-                  [destLon, destLat]
-                ]
-              }
-            };
-          })
-          .filter(function (f) {
-            return f !== null;
-          });
+          };
+        }).filter(function(f) {
+          return f !== null;
+        });
       }
+
+      desireFeatures.forEach(function(f) {
+        var p = f.properties || {};
+
+        p.o = normalizeFips(firstDefined(p, ['o', 'ORIG_FIPS', 'ORIG']));
+        p.d = normalizeFips(firstDefined(p, ['d', 'DEST_FIPS', 'DEST']));
+
+        p.oName = firstDefined(p, ['oName', 'origin_county', 'Origin_County']) || countyNameByFips[p.o] || p.o;
+        p.dName = firstDefined(p, ['dName', 'destination_county', 'Destination_County']) || countyNameByFips[p.d] || p.d;
+      });
 
       if (window.countyOdMapInstance) {
         window.countyOdMapInstance.off();
@@ -443,261 +396,183 @@
         window.countyOdMapInstance = null;
       }
 
-      var mapContainer = document.getElementById(containerID);
-
-      if (!mapContainer) {
-        console.error('County OD map container not found:', containerID);
-        return;
-      }
-
       $('#' + containerID).empty();
 
-      var map = L.map(containerID).setView([33.79, -84.35], 8);
+      var map = L.map(containerID).setView([33.792902, -84.349885], 8);
       window.countyOdMapInstance = map;
 
-      var baseLayers = {
-        osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19
-        }),
-
-        esri: L.tileLayer(
-          'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-          {
-            attribution: 'Tiles &copy; Esri',
-            maxZoom: 16
-          }
-        ),
-
-        carto: L.tileLayer(
-          'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-          {
-            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
-          }
-        )
-      };
-
-      var currentBaseLayer = null;
-
-      function setBaseMap(layerName) {
-        if (!baseLayers[layerName]) return;
-
-        if (currentBaseLayer && map.hasLayer(currentBaseLayer)) {
-          map.removeLayer(currentBaseLayer);
-        }
-
-        currentBaseLayer = baseLayers[layerName];
-        currentBaseLayer.addTo(map);
-      }
-
-      setBaseMap(d3.select('#countyOdBaseMap').property('value') || 'osm');
+      currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+        subdomains: ['a', 'b', 'c']
+      }).addTo(map);
 
       if (L.Control && L.Control.Fullscreen) {
         map.addControl(new L.Control.Fullscreen());
       }
 
-      var mapsvg = d3.select(map.getPanes().overlayPane).append('svg');
-      var g = mapsvg.append('g');
-      var tooltip = d3.select('#countyOdTooltip');
+      var countiesLayer = L.geoJSON(countyFeatures, {
+        style: function() {
+          return {
+            fillColor: '#ffffff',
+            weight: 1,
+            opacity: 1,
+            color: '#777',
+            fillOpacity: 0.2
+          };
+        }
+      }).addTo(map);
 
-      function projectPoint(x, y) {
-        var point = map.latLngToLayerPoint(new L.LatLng(y, x));
-        this.stream.point(point.x, point.y);
+      function getCurrentValues() {
+        return desireFeatures.map(function(feature) {
+          return getBidirectionalValue(feature, odData);
+        });
       }
 
-      var transform = d3.geoTransform({ point: projectPoint });
-      var path = d3.geoPath().projection(transform);
-
-      var countyPaths = g
-        .selectAll('.county-polygons')
-        .data(countyFeatures)
-        .enter()
-        .append('path')
-        .attr('class', 'county-polygons')
-        .attr('stroke', '#666')
-        .attr('stroke-width', 1)
-        .attr('fill', '#fff')
-        .attr('fill-opacity', 0.35);
-
-      var dataColumn = defaultColumn;
-
-      var lines = g
-        .selectAll('.county-desirelines')
-        .data(
-          desireFeatures.filter(function (d) {
-            return d.properties && d.properties.o && d.properties.d;
-          })
-        )
-        .enter()
-        .append('path')
-        .attr('class', 'county-desirelines')
-        .attr('stroke', palette[currentPaletteIndex][5])
-        .attr('stroke-linecap', 'round')
-        .style('fill', 'none')
-        .style('stroke-width', 0)
-        .style('pointer-events', 'visibleStroke')
-        .on('mouseover', function (d) {
-          d3.select(this).style('cursor', 'pointer');
-
-          var o = d.properties.o;
-          var dest = d.properties.d;
-
-          var v1 = (od[o] && od[o][dest] && od[o][dest][dataColumn]) || 0;
-          var v2 = (od[dest] && od[dest][o] && od[dest][o][dataColumn]) || 0;
-
-          tooltip
-            .style('opacity', 1)
-            .html(
-              '<strong>' +
-                prettyLabel(dataColumn) +
-                '</strong><br>' +
-                d.properties.oName +
-                ' → ' +
-                d.properties.dName +
-                ': ' +
-                d3.format(',')(v1) +
-                '<br>' +
-                d.properties.dName +
-                ' → ' +
-                d.properties.oName +
-                ': ' +
-                d3.format(',')(v2) +
-                '<br><strong>Total:</strong> ' +
-                d3.format(',')(v1 + v2)
-            );
-        })
-        .on('mousemove', function () {
-          tooltip
-            .style('top', d3.event.pageY - 16 + 'px')
-            .style('left', d3.event.pageX + 12 + 'px');
-        })
-        .on('mouseout', function () {
-          d3.select(this).style('cursor', 'default');
-          tooltip.style('opacity', 0);
-        });
-
-      function updateTransform() {
-        if (!countyFeatures.length) return;
-
-        var bounds = path.bounds({
-          type: 'FeatureCollection',
-          features: countyFeatures
-        });
-
-        var buffer = 100;
-        var topLeft = [bounds[0][0] - buffer, bounds[0][1] - buffer];
-        var bottomRight = [bounds[1][0] + buffer, bounds[1][1] + buffer];
-
-        mapsvg
-          .attr('width', bottomRight[0] - topLeft[0])
-          .attr('height', bottomRight[1] - topLeft[1])
-          .style('left', topLeft[0] + 'px')
-          .style('top', topLeft[1] + 'px');
-
-        g.attr(
-          'transform',
-          'translate(' + -topLeft[0] + ',' + -topLeft[1] + ')'
-        );
-
-        countyPaths.attr('d', path);
-        lines.attr('d', path);
+      function getCurrentMax() {
+        var values = getCurrentValues();
+        return d3.max(values) || 1;
       }
 
-      function updateDesireLines() {
-        dataColumn =
-          d3.select('#countyOdAttribute').property('value') || defaultColumn;
+      function getCurrentBreaks() {
+        return buildBreaks(getCurrentValues());
+      }
 
-        var dataMax = getMax(od, dataColumn);
+      function updateStyle() {
+        var maxValue = getCurrentMax();
+        var breaks = getCurrentBreaks();
 
-        if (!dataMax || dataMax < 1) {
-          dataMax = 1;
+        updateLegend(breaks);
+
+        countyLineLayer.setStyle(function(feature) {
+          var value = getBidirectionalValue(feature, odData);
+
+          return {
+            color: getClassColor(value, breaks),
+            weight: getLineWeight(value, maxValue),
+            opacity: value > 0 ? 0.85 : 0,
+            lineCap: 'round'
+          };
+        });
+      }
+
+      countyLineLayer = L.geoJSON(desireFeatures, {
+        style: function(feature) {
+          var value = getBidirectionalValue(feature, odData);
+          var maxValue = getCurrentMax();
+          var breaks = getCurrentBreaks();
+
+          return {
+            color: getClassColor(value, breaks),
+            weight: getLineWeight(value, maxValue),
+            opacity: value > 0 ? 0.85 : 0,
+            lineCap: 'round'
+          };
+        },
+        onEachFeature: function(feature, layer) {
+          layer.on('mouseover', function() {
+            var p = feature.properties || {};
+            var o = p.o;
+            var d = p.d;
+
+            var v1 = getDirectionalValue(odData, o, d);
+            var v2 = getDirectionalValue(odData, d, o);
+
+            layer.bindTooltip(
+              '<strong>' + prettyLabel(selectedAttribute) + '</strong><br/>' +
+              p.oName + ' → ' + p.dName + ': ' + formatNumber(v1) + '<br/>' +
+              p.dName + ' → ' + p.oName + ': ' + formatNumber(v2) + '<br/>' +
+              '<strong>Total:</strong> ' + formatNumber(v1 + v2),
+              { sticky: true }
+            ).openTooltip();
+          });
+        }
+      }).addTo(map);
+
+      if (countiesLayer.getBounds && countiesLayer.getBounds().isValid()) {
+        map.fitBounds(countiesLayer.getBounds());
+      } else if (countyLineLayer.getBounds && countyLineLayer.getBounds().isValid()) {
+        map.fitBounds(countyLineLayer.getBounds());
+      }
+
+      setTimeout(function() {
+        map.invalidateSize();
+      }, 200);
+
+      attributeSelect.on('change', function() {
+        selectedAttribute = this.value;
+        updateStyle();
+      });
+
+      $('#countyOdSlider').bootstrapSlider({
+        formatter: function(value) {
+          return 'Line thickness: ' + value;
+        }
+      }).on('slideStop', function(ev) {
+        maxLineWidth = ev.value;
+        updateStyle();
+      });
+
+      $('#countyOdBaseMap').on('change', function() {
+        var value = this.value;
+
+        if (currentTileLayer) {
+          map.removeLayer(currentTileLayer);
         }
 
-        w.domain([0, dataMax]);
-        op.domain([0, dataMax]);
-        colorScale.domain([0, dataMax]);
-
-        lines
-          .interrupt()
-          .transition()
-          .duration(300)
-          .style('stroke-width', function (d) {
-            var o = d.properties.o;
-            var dest = d.properties.d;
-
-            var a = (od[o] && od[o][dest] && od[o][dest][dataColumn]) || 0;
-            var b = (od[dest] && od[dest][o] && od[dest][o][dataColumn]) || 0;
-
-            return w(a + b);
-          })
-          .style('stroke-opacity', function (d) {
-            var o = d.properties.o;
-            var dest = d.properties.d;
-
-            var a = (od[o] && od[o][dest] && od[o][dest][dataColumn]) || 0;
-            var b = (od[dest] && od[dest][o] && od[dest][o][dataColumn]) || 0;
-
-            return op(a + b);
-          })
-          .attr('stroke', function (d) {
-            var o = d.properties.o;
-            var dest = d.properties.d;
-
-            var a = (od[o] && od[o][dest] && od[o][dest][dataColumn]) || 0;
-            var b = (od[dest] && od[dest][o] && od[dest][o][dataColumn]) || 0;
-
-            return colorScale(a + b);
+        if (value === 'osm') {
+          currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19,
+            subdomains: ['a', 'b', 'c']
           });
-      }
+        } else if (value === 'esri') {
+          currentTileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            {
+              attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+              maxZoom: 16
+            }
+          );
+        } else if (value === 'carto') {
+          currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+            subdomains: 'abcd',
+            maxZoom: 20
+          });
+        }
 
-      buildPaletteSelector(updateDesireLines);
-
-      d3.selectAll('#countyOdAttribute, .countyOdInput').on(
-        'change',
-        updateDesireLines
-      );
-
-      d3.select('#countyOdBaseMap').on('change', function () {
-        setBaseMap(d3.select(this).property('value'));
+        currentTileLayer.addTo(map);
       });
 
-      var mySlider = $('#countyOdSlider');
-
-      if (mySlider.length && mySlider.bootstrapSlider) {
-        mySlider.bootstrapSlider();
-
-        mySlider.off('slideStop');
-        mySlider.on('slideStop', function () {
-          w.range([0, mySlider.bootstrapSlider('getValue')]);
-          updateDesireLines();
-        });
-      }
-
-      map.on('viewreset zoomend moveend', updateTransform);
-
-      map.on('movestart', function () {
-        mapsvg.classed('hidden', true);
-      });
-
-      map.on('moveend', function () {
-        updateTransform();
-        mapsvg.classed('hidden', false);
-      });
+      buildPaletteSelector(updateStyle);
+      updateStyle();
 
       $('a[href="#CountyOandD"]')
         .off('shown.bs.tab.countyod')
-        .on('shown.bs.tab.countyod', function () {
-          redrawMap(map, countyFeatures, updateTransform, updateDesireLines);
+        .on('shown.bs.tab.countyod', function() {
+          setTimeout(function() {
+            map.invalidateSize();
+
+            if (countiesLayer.getBounds && countiesLayer.getBounds().isValid()) {
+              map.fitBounds(countiesLayer.getBounds());
+            }
+
+            updateStyle();
+          }, 200);
         });
+    }
 
-      updateTransform();
-      updateDesireLines();
-
-      if ($('#CountyOandD').hasClass('active')) {
-        redrawMap(map, countyFeatures, updateTransform, updateDesireLines);
-      }
+    Promise.all([
+      d3.csv(csvPath),
+      new Promise((resolve, reject) => loadWithFallback(d3.json, countiesPath, fallbackCountiesPath, (err, data) => err ? reject(err) : resolve(data))),
+      new Promise((resolve, reject) => loadWithFallback(d3.json, desirelinesPath, fallbackDesirelinesPath, (err, data) => err ? reject(err) : resolve(data)))
+    ]).then(([csv, countiesTopo, desirelinesTopo]) => {
+      initMap(csv, countiesTopo, desirelinesTopo);
+    }).catch(err => {
+      console.error('Error loading County OD data:', err);
+      d3.select('#' + divID).remove();
     });
   })();
-})(d3v4, abmviz_utilities);
+
+})(d3, abmviz_utilities);
