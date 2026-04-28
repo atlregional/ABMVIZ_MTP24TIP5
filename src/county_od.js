@@ -38,12 +38,77 @@
       ]
     ];
 
-    var scenario = abmviz_utilities.GetURLParameter('scenario');
-    var csvPath = '../data/' + scenario + '/county_desirelines.csv';
-    var countiesPath = '../data/counties.topojson';
-    var fallbackCountiesPath = '../data/counties.topojson';
-    var desirelinesPath = '../data/county_desirelines.topojson';
-    var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
+    // Load scenario from URL parameter or scenarios.csv
+    var urlScenario = abmviz_utilities.GetURLParameter('scenario');
+    
+    function loadScenarios(callback) {
+      d3.csv('../data/scenarios.csv', function(err, scenarios) {
+        if (err) {
+          console.error('Failed to load scenarios.csv:', err);
+          callback('MTP24_2020'); // Fallback to default
+          return;
+        }
+        
+        var scenario = urlScenario;
+        
+        // If no URL parameter, use first scenario from CSV
+        if (!scenario && scenarios.length > 0) {
+          scenario = scenarios[0].Scenario;
+          console.log('Using default scenario from scenarios.csv:', scenario);
+        } else if (!scenario) {
+          scenario = 'MTP24_2020'; // Ultimate fallback
+        }
+        
+        console.log('Selected scenario:', scenario);
+        callback(scenario);
+      });
+    }
+
+    // Load scenario first, then initialize map
+    loadScenarios(function(scenario) {
+      var csvPath = '../data/' + scenario + '/county_desirelines.csv';
+      var countiesPath = '../data/counties.topojson';
+      var fallbackCountiesPath = '../data/counties.topojson';
+      var desirelinesPath = '../data/county_desirelines.topojson';
+      var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
+
+      console.log('Loading county OD data from:', csvPath);
+
+      // Load CSV with explicit error handling
+      d3.csv(csvPath, function(err, csv) {
+        if (err) {
+          console.error('Error loading CSV:', err);
+          d3.select('#' + divID).remove();
+          return;
+        }
+
+        console.log('=== CSV DEBUG INFO ===');
+        console.log('Rows:', csv ? csv.length : 0);
+        console.log('Columns:', csv && csv.columns ? csv.columns : 'UNDEFINED');
+        console.log('First row:', csv && csv.length > 0 ? csv[0] : 'NO ROWS');
+        console.log('CSV object type:', typeof csv);
+        console.log('CSV keys:', csv ? Object.keys(csv) : 'N/A');
+        console.log('=== END DEBUG ===');
+
+        if (!csv || csv.length === 0) {
+          console.error('CSV is empty or failed to parse');
+          d3.select('#' + divID).remove();
+          return;
+        }
+
+        // Load TopoJSON files
+        Promise.all([
+          new Promise((resolve, reject) => loadWithFallback(d3.json, countiesPath, fallbackCountiesPath, (err, data) => err ? reject(err) : resolve(data))),
+          new Promise((resolve, reject) => loadWithFallback(d3.json, desirelinesPath, fallbackDesirelinesPath, (err, data) => err ? reject(err) : resolve(data)))
+        ]).then(([countiesTopo, desirelinesTopo]) => {
+          console.log('Data loaded successfully - CSV rows:', csv.length);
+          initMap(csv, countiesTopo, desirelinesTopo);
+        }).catch(err => {
+          console.error('Error loading TopoJSON data:', err);
+          d3.select('#' + divID).remove();
+        });
+      });
+    });
 
     function normalizeFips(v) {
       if (v === undefined || v === null || v === '') return null;
@@ -273,7 +338,26 @@
         return;
       }
 
-      var numericColumns = csv.columns.filter(function(col) {
+      // D3 v3 doesn't auto-populate csv.columns, so extract them from the first row
+      var csvColumns = Object.keys(csv[0]);
+      console.log('Extracted CSV columns:', csvColumns);
+
+      // MOVE THIS TO THE TOP - Before it's used
+      var countyFeatures = getTopoFeatures(countiesTopo);
+      var countyNameByFips = {};
+
+      countyFeatures.forEach(function(f) {
+        var p = f.properties || {};
+        var fips = normalizeFips(firstDefined(p, ['FIPS', 'GEOID', 'COUNTYFP']));
+        var name = firstDefined(p, ['NAME', 'name', 'County', 'COUNTY', 'NAMELSAD']) || fips;
+
+        if (fips) {
+          countyNameByFips[fips] = name;
+          console.log('Mapped FIPS:', fips, '→', name);
+        }
+      });
+
+      var numericColumns = csvColumns.filter(function(col) {
         var idColumns = {
           ORIG_FIPS: true,
           DEST_FIPS: true,
@@ -292,6 +376,8 @@
           return row[col] !== undefined && row[col] !== null && row[col] !== '' && !isNaN(+row[col]);
         });
       });
+
+      console.log('Numeric columns found:', numericColumns);
 
       if (!numericColumns.length) {
         console.error('No numeric columns found in county_desirelines.csv');
@@ -328,19 +414,11 @@
           odData[o][d][col] = +row[col] || 0;
         });
 
-        odData[o][d].origin_county = firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
-        odData[o][d].destination_county = firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
-      });
-
-      var countyFeatures = getTopoFeatures(countiesTopo);
-      var countyNameByFips = {};
-
-      countyFeatures.forEach(function(f) {
-        var p = f.properties || {};
-        var fips = normalizeFips(firstDefined(p, ['FIPS', 'GEOID', 'COUNTYFP']));
-        var name = firstDefined(p, ['NAME', 'name', 'County', 'COUNTY', 'NAMELSAD']) || fips;
-
-        if (fips) countyNameByFips[fips] = name;
+        // NOW countyNameByFips is defined
+        odData[o][d].origin_county = countyNameByFips[o] || firstDefined(row, ['origin_county', 'oName', 'Origin_County']) || o;
+        odData[o][d].destination_county = countyNameByFips[d] || firstDefined(row, ['destination_county', 'dName', 'Destination_County']) || d;
+        
+        console.log('OD Record:', o, '→', d, 'Value:', odData[o][d][selectedAttribute]);
       });
 
       var desireFeatures = getTopoFeatures(desirelinesTopo);
@@ -563,16 +641,6 @@
         });
     }
 
-    Promise.all([
-      d3.csv(csvPath),
-      new Promise((resolve, reject) => loadWithFallback(d3.json, countiesPath, fallbackCountiesPath, (err, data) => err ? reject(err) : resolve(data))),
-      new Promise((resolve, reject) => loadWithFallback(d3.json, desirelinesPath, fallbackDesirelinesPath, (err, data) => err ? reject(err) : resolve(data)))
-    ]).then(([csv, countiesTopo, desirelinesTopo]) => {
-      initMap(csv, countiesTopo, desirelinesTopo);
-    }).catch(err => {
-      console.error('Error loading County OD data:', err);
-      d3.select('#' + divID).remove();
-    });
   })();
 
 })(d3, abmviz_utilities);
