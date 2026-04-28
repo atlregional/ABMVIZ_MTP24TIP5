@@ -294,7 +294,7 @@
       });
 
       if (!numericColumns.length) {
-        console.error('No numeric columns found in county_desirelines.csv');
+        console.error('No numeric columns found in County_Desirelines.csv');
         d3.select('#' + divID).remove();
         return;
       }
