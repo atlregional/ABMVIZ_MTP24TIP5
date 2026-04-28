@@ -39,10 +39,10 @@
     ];
 
     var scenario = abmviz_utilities.GetURLParameter('scenario');
-    var csvPath = '../data/' + scenario + '/county_desirelines.csv';
-    var countiesPath = '../data/' + scenario + '/counties.topojson';
-    var fallbackCountiesPath = '../data/counties.topojson';
-    var desirelinesPath = '../data/' + scenario + '/county_desirelines.topojson';
+    var csvPath = '../data/' + scenario + '/County_Desirelines.csv';
+    var countiesPath = '../data/' + scenario + '/Counties.topojson';
+    var fallbackCountiesPath = '../data/Counties.topojson';
+    var desirelinesPath = '../data/' + scenario + '/County_Desirelines.topojson';
     var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
 
     function normalizeFips(v) {
