@@ -41,9 +41,9 @@
     var scenario = abmviz_utilities.GetURLParameter('scenario');
     var csvPath = '../data/' + scenario + '/County_Desirelines.csv';
     var countiesPath = '../data/' + scenario + '/Counties.topojson';
-    var fallbackCountiesPath = '../data/Counties.topojson';
+    
     var desirelinesPath = '../data/' + scenario + '/County_Desirelines.topojson';
-    var fallbackDesirelinesPath = '../data/County_Desirelines.topojson';
+    
 
     function normalizeFips(v) {
       if (v === undefined || v === null || v === '') return null;
