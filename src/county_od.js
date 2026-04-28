@@ -43,7 +43,7 @@
     var countiesPath = '../data/' + scenario + '/Counties.topojson';
     var fallbackCountiesPath = '../data/Counties.topojson';
     var desirelinesPath = '../data/' + scenario + '/County_Desirelines.topojson';
-    var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
+    var fallbackDesirelinesPath = '../data/County_Desirelines.topojson';
 
     function normalizeFips(v) {
       if (v === undefined || v === null || v === '') return null;
