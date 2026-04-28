@@ -39,11 +39,11 @@
     ];
 
     var scenario = abmviz_utilities.GetURLParameter('scenario');
-    var csvPath = '../data/' + scenario + '/county_desirelines.csv';
-    var countiesPath = '../data/' + scenario + '/counties.topojson';
-    var fallbackCountiesPath = '../data/counties.topojson';
-    var desirelinesPath = '../data/' + scenario + '/county_desirelines.topojson';
-    var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
+    var csvPath = '../data/' + scenario + '/County_Desirelines.csv';
+    var countiesPath = '../data/' + scenario + '/Counties.topojson';
+    var fallbackCountiesPath = '../data/Counties.topojson';
+    var desirelinesPath = '../data/' + scenario + '/County_Desirelines.topojson';
+    var fallbackDesirelinesPath = '../data/County_Desirelines.topojson';
 
     function normalizeFips(v) {
       if (v === undefined || v === null || v === '') return null;
@@ -294,7 +294,7 @@
       });
 
       if (!numericColumns.length) {
-        console.error('No numeric columns found in county_desirelines.csv');
+        console.error('No numeric columns found in County_Desirelines.csv');
         d3.select('#' + divID).remove();
         return;
       }
