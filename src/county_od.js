@@ -6,7 +6,7 @@
     var containerID = 'countyOdMap';
 
     var selectedColorRampIndex = 1;
-    var maxLineWidth = 10;
+    var maxLineWidth = 4;
     var currentTileLayer;
     var countyLineLayer;
     var selectedAttribute = 'ALLALL';
@@ -67,10 +67,12 @@
     // Load scenario first, then initialize map
     loadScenarios(function(scenario) {
       var csvPath = '../data/' + scenario + '/county_desirelines.csv';
+      var nodesPath = '../data/' + scenario + '/county_nodes.csv';
       var countiesPath = '../data/counties.topojson';
       var fallbackCountiesPath = '../data/counties.topojson';
       var desirelinesPath = '../data/county_desirelines.topojson';
       var fallbackDesirelinesPath = '../data/county_desirelines.topojson';
+      var centroidsPath = '../data/Counties_Centroids.topojson';
 
       console.log('Loading county OD data from:', csvPath);
 
@@ -96,13 +98,22 @@
           return;
         }
 
-        // Load TopoJSON files
+        // Load TopoJSON files and county node CSV
         Promise.all([
           new Promise((resolve, reject) => loadWithFallback(d3.json, countiesPath, fallbackCountiesPath, (err, data) => err ? reject(err) : resolve(data))),
-          new Promise((resolve, reject) => loadWithFallback(d3.json, desirelinesPath, fallbackDesirelinesPath, (err, data) => err ? reject(err) : resolve(data)))
-        ]).then(([countiesTopo, desirelinesTopo]) => {
+          new Promise((resolve, reject) => loadWithFallback(d3.json, desirelinesPath, fallbackDesirelinesPath, (err, data) => err ? reject(err) : resolve(data))),
+          new Promise((resolve, reject) => loadWithFallback(d3.json, centroidsPath, null, (err, data) => err ? reject(err) : resolve(data))),
+          new Promise((resolve) => d3.csv(nodesPath, function(err, data) {
+            if (err) {
+              console.warn('Failed to load county_nodes.csv:', err);
+              resolve([]);
+              return;
+            }
+            resolve(data);
+          }))
+        ]).then(([countiesTopo, desirelinesTopo, centroidsTopo, nodeCsv]) => {
           console.log('Data loaded successfully - CSV rows:', csv.length);
-          initMap(csv, countiesTopo, desirelinesTopo);
+          initMap(csv, countiesTopo, desirelinesTopo, centroidsTopo, nodeCsv);
         }).catch(err => {
           console.error('Error loading TopoJSON data:', err);
           d3.select('#' + divID).remove();
@@ -199,7 +210,14 @@
 
     function getLineWeight(value, maxValue) {
       if (!maxValue || maxValue <= 0 || !value) return 0;
-      return Math.max(0.5, (value / maxValue) * maxLineWidth);
+
+      var ratio = value / maxValue;
+
+  // Compress extreme values so the largest OD line does not become huge
+      var weight = Math.sqrt(ratio) * maxLineWidth;
+
+  // Hard cap thickness
+      return Math.max(0.75, Math.min(4, weight));
     }
 
     function getBidirectionalValue(feature, odData) {
@@ -336,7 +354,7 @@
       });
     }
 
-    function initMap(csv, countiesTopo, desirelinesTopo) {
+    function initMap(csv, countiesTopo, desirelinesTopo, centroidsTopo, nodeCsv) {
       if (!csv || !csv.length) {
         console.error('No county OD records loaded');
         d3.select('#' + divID).remove();
@@ -349,6 +367,8 @@
 
       // MOVE THIS TO THE TOP - Before it's used
       var countyFeatures = getTopoFeatures(countiesTopo);
+      var centroidFeatures = getTopoFeatures(centroidsTopo);
+      var nodeDataByFips = {};
       var countyNameByFips = {};
 
       countyFeatures.forEach(function(f) {
@@ -360,6 +380,21 @@
           countyNameByFips[fips] = name;
           console.log('Mapped FIPS:', fips, '→', name);
         }
+      });
+
+      (nodeCsv || []).forEach(function(row) {
+        var fips = normalizeFips(firstDefined(row, ['FIPS', 'fips']));
+
+        if (!fips) return;
+
+        nodeDataByFips[fips] = {
+          county: firstDefined(row, ['county', 'County', 'COUNTY']) || countyNameByFips[fips] || fips,
+          allTrips: Math.round(+row.trips_produced || +row.trips_attracted || 0),
+          sov: Math.round(+row.sov || 0),
+          hov: Math.round(+row.hov || 0),
+          walk: Math.round(+row.walk || 0),
+          bike: Math.round(+row.bike || 0)
+        };
       });
 
       var numericColumns = csvColumns.filter(function(col) {
@@ -473,7 +508,7 @@
       });
 
       desireFeatures.sort(function(a, b) {
-        return getBidirectionalValue(a, odData) - getBidirectionalValue(b, odData);
+        return getBidirectionalValue(b, odData) - getBidirectionalValue(a, odData);
       });
 
       if (window.countyOdMapInstance) {
@@ -487,10 +522,10 @@
       var map = L.map(containerID).setView([33.792902, -84.349885], 8);
       window.countyOdMapInstance = map;
 
-      currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19,
-        subdomains: ['a', 'b', 'c']
+      currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution:  '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 20,
+        subdomains: 'abcd'
       }).addTo(map);
 
       if (L.Control && L.Control.Fullscreen) {
@@ -509,6 +544,117 @@
         }
       }).addTo(map);
 
+      countyLineLayer = L.layerGroup().addTo(map);
+      var arrowheadsLayer = L.layerGroup().addTo(map);
+      map.on('zoomend', function() {
+              updateVisibleLines();
+            });
+
+      function renderCountyOdTable(rows) {
+        var tbody = d3.select('#countyOdTable tbody');
+        if (tbody.empty()) return;
+        tbody.html('');
+
+        var sorted = rows.slice().sort(function(a, b) {
+          return (+b.ALLALL || 0) - (+a.ALLALL || 0);
+        });
+
+        sorted.forEach(function(row) {
+          var o = normalizeFips(firstDefined(row, ['ORIG_FIPS', 'origin_fips', 'ORIG', 'o']));
+          var d = normalizeFips(firstDefined(row, ['DEST_FIPS', 'destination_fips', 'DEST', 'd']));
+          var origin = countyNameByFips[o] || firstDefined(row, ['origin_county', 'Origin_County', 'oName']) || o;
+          var dest = countyNameByFips[d] || firstDefined(row, ['destination_county', 'Destination_County', 'dName']) || d;
+
+          tbody.append('tr').html(
+            '<td>' + origin + '</td>' +
+            '<td>' + dest + '</td>' +
+            '<td>' + formatNumber(+row.ALLALL || 0) + '</td>' +
+            '<td>' + formatNumber(+row.ALLSOV || 0) + '</td>' +
+            '<td>' + formatNumber(+row.ALLHOV || 0) + '</td>' +
+            '<td>' + formatNumber(+row.ALLWALK || 0) + '</td>' +
+            '<td>' + formatNumber(+row.ALLBIKE || 0) + '</td>'
+          );
+        });
+      }
+
+      function updateArrowheads() {
+        arrowheadsLayer.clearLayers();
+
+        var maxValue = getCurrentMax();
+        var breaks = getCurrentBreaks();
+        var visibleCount = getVisibleFeatureCount();
+
+        desireFeatures.slice(0, visibleCount).forEach(function(feature) {
+          var coords = feature.geometry && feature.geometry.coordinates;
+          if (!coords || coords.length < 2) return;
+
+          var last = coords[coords.length - 1];
+          var prev = coords[coords.length - 2];
+          var end = L.latLng(last[1], last[0]);
+          var start = L.latLng(prev[1], prev[0]);
+          var ptEnd = map.latLngToLayerPoint(end);
+          var ptStart = map.latLngToLayerPoint(start);
+          var dx = ptEnd.x - ptStart.x;
+          var dy = ptEnd.y - ptStart.y;
+          var length = Math.sqrt(dx * dx + dy * dy);
+          if (length < 1) return;
+
+          var ux = dx / length;
+          var uy = dy / length;
+          var lineWeight = getLineWeight(getBidirectionalValue(feature, odData), maxValue);
+          var arrowLen = Math.max(7, Math.min(13, lineWeight * 2.4));
+          var arrowWidth = arrowLen * 0.38;
+          var baseX = ptEnd.x - ux * arrowLen;
+          var baseY = ptEnd.y - uy * arrowLen;
+          var left = map.layerPointToLatLng(L.point(baseX + uy * arrowWidth, baseY - ux * arrowWidth));
+          var right = map.layerPointToLatLng(L.point(baseX - uy * arrowWidth, baseY + ux * arrowWidth));
+          var color = getClassColor(getBidirectionalValue(feature, odData), breaks);
+
+          var arrow = L.polygon([left, end, right], {
+            color: color,
+            fillColor: color,
+            weight: 0,
+            opacity: 1,
+            fillOpacity: 0.75,
+            interactive: false
+          });
+
+          arrowheadsLayer.addLayer(arrow);
+        });
+        if (arrowheadsLayer.bringToFront) {
+          arrowheadsLayer.bringToFront();
+        }
+      }
+
+      var centroidsLayer = L.geoJSON(centroidFeatures, {
+        pointToLayer: function(feature, latlng) {
+          return L.circleMarker(latlng, {
+            radius: 6,
+            fillColor: '#ff7800',
+            color: '#333',
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8
+          });
+        },
+        onEachFeature: function(feature, layer) {
+          var p = feature.properties || {};
+          var fips = normalizeFips(firstDefined(p, ['FIPS', 'fips']));
+          var node = nodeDataByFips[fips] || {};
+          var countyName = firstDefined(p, ['county', 'COUNTY', 'County']) || node.county || fips;
+
+          var popupContent =
+            '<strong>County:</strong> ' + countyName + '<br/>' +
+            '<strong>All Trips:</strong> ' + formatNumber(node.allTrips) + '<br/>' +
+            '<strong>SOV:</strong> ' + formatNumber(node.sov) + '<br/>' +
+            '<strong>HOV:</strong> ' + formatNumber(node.hov) + '<br/>' +
+            '<strong>Walk:</strong> ' + formatNumber(node.walk) + '<br/>' +
+            '<strong>Bike:</strong> ' + formatNumber(node.bike);
+
+          layer.bindPopup(popupContent);
+        }
+      }).addTo(map);
+
       function getCurrentValues() {
         return desireFeatures.map(function(feature) {
           return getBidirectionalValue(feature, odData);
@@ -524,56 +670,113 @@
         return buildBreaks(getCurrentValues());
       }
 
-      function updateStyle() {
-        var maxValue = getCurrentMax();
-        var breaks = getCurrentBreaks();
+      function getVisibleFeatureCount() {
+        var zoom = map.getZoom();
+        if (zoom <= 7) return Math.min(50, desireFeatures.length);
+        if (zoom === 8) return Math.min(75, desireFeatures.length);
+        if (zoom === 9) return Math.min(120, desireFeatures.length);
+        if (zoom === 10) return Math.min(220, desireFeatures.length);
+        if (zoom === 11) return Math.min(320, desireFeatures.length);
+        return desireFeatures.length;
+      }
+      function updateVisibleLines() {
+        var visibleCount = getVisibleFeatureCount();
 
-        updateLegend(breaks);
+        countyLineLayer.clearLayers();
 
-        countyLineLayer.setStyle(function(feature) {
+        var visibleFeatures = desireFeatures
+          .slice(0, visibleCount)
+          .slice()
+          .reverse();
+
+        visibleFeatures.forEach(function(feature) {
           var value = getBidirectionalValue(feature, odData);
+          if (value <= 0) return;
 
-          return {
-            color: getClassColor(value, breaks),
-            weight: getLineWeight(value, maxValue),
-            opacity: value > 0 ? 0.85 : 0,
-            lineCap: 'round'
-          };
+          var layer = L.geoJSON(feature, {
+            style: {
+              color: getClassColor(value, getCurrentBreaks()),
+              weight: getLineWeight(value, getCurrentMax()),
+              opacity: 0.3,
+              lineCap: 'round',
+              lineJoin: 'round',
+              className: 'county-od-line'
+            },
+            onEachFeature: function(feature, layer) {
+              bindCountyOdPopupAndTooltip(feature, layer);
+            }
+          });
+
+          layer.addTo(countyLineLayer);
+      });
+
+  updateArrowheads();
+}
+
+      function sortDesireFeaturesByCurrentAttribute() {
+        desireFeatures.sort(function(a, b) {
+          return getBidirectionalValue(b, odData) - getBidirectionalValue(a, odData);
         });
       }
 
-      countyLineLayer = L.geoJSON(desireFeatures, {
-        style: function(feature) {
-          var value = getBidirectionalValue(feature, odData);
-          var maxValue = getCurrentMax();
-          var breaks = getCurrentBreaks();
-
-          return {
-            color: getClassColor(value, breaks),
-            weight: getLineWeight(value, maxValue),
-            opacity: value > 0 ? 0.85 : 0,
-            lineCap: 'round'
-          };
-        },
-        onEachFeature: function(feature, layer) {
-          layer.on('mouseover', function() {
-            var p = feature.properties || {};
-            var o = p.o;
-            var d = p.d;
-
-            var v1 = getDirectionalValue(odData, o, d);
-            var v2 = getDirectionalValue(odData, d, o);
-
-            layer.bindTooltip(
-              '<strong>' + prettyLabel(selectedAttribute) + '</strong><br/>' +
-              p.oName + ' → ' + p.dName + ': ' + formatNumber(v1) + '<br/>' +
-              p.dName + ' → ' + p.oName + ': ' + formatNumber(v2) + '<br/>' +
-              '<strong>Total:</strong> ' + formatNumber(v1 + v2),
-              { sticky: true }
-            ).openTooltip();
-          });
+      function updateStyle() {
+        if (!countyLineLayer) {
+          countyLineLayer = L.layerGroup().addTo(map);
         }
-      }).addTo(map);
+
+        sortDesireFeaturesByCurrentAttribute();
+
+        var maxValue = getCurrentMax();
+        var breaks = getCurrentBreaks();
+        var visibleCount = getVisibleFeatureCount();
+
+        updateLegend(breaks);
+
+        
+        updateVisibleLines();
+
+
+        if (countyLineLayer && countyLineLayer.bringToFront) {
+          countyLineLayer.bringToFront();
+        }
+        updateArrowheads();
+      }
+
+      function bindCountyOdPopupAndTooltip(feature, layer) {
+        var p = feature.properties || {};
+        var o = p.o;
+        var d = p.d;
+        var flow = (odData[o] && odData[o][d]) ? odData[o][d] : {};
+
+        var popupContent =
+          '<strong>Origin County:</strong> ' + (p.oName || o) + '<br/>' +
+          '<strong>Destination County:</strong> ' + (p.dName || d) + '<br/>' +
+          '<strong>All Trips:</strong> ' + formatNumber(flow.ALLALL) + '<br/>' +
+          '<strong>SOV:</strong> ' + formatNumber(flow.ALLSOV) + '<br/>' +
+          '<strong>HOV:</strong> ' + formatNumber(flow.ALLHOV) + '<br/>' +
+          '<strong>Walk:</strong> ' + formatNumber(flow.ALLWALK) + '<br/>' +
+          '<strong>Bike:</strong> ' + formatNumber(flow.ALLBIKE);
+
+        layer.bindPopup(popupContent);
+
+        layer.on('mouseover', function() {
+          var v1 = getDirectionalValue(odData, o, d);
+          var v2 = getDirectionalValue(odData, d, o);
+
+          layer.bindTooltip(
+            '<strong>' + prettyLabel(selectedAttribute) + '</strong><br/>' +
+            p.oName + ' → ' + p.dName + ': ' + formatNumber(v1) + '<br/>' +
+            p.dName + ' → ' + p.oName + ': ' + formatNumber(v2) + '<br/>' +
+            '<strong>Total:</strong> ' + formatNumber(v1 + v2),
+            { sticky: true }
+          ).openTooltip();
+        });
+      }
+
+      
+
+      renderCountyOdTable(csv);
+      updateStyle();
 
       if (countiesLayer.getBounds && countiesLayer.getBounds().isValid()) {
         map.fitBounds(countiesLayer.getBounds());
@@ -621,7 +824,7 @@
             }
           );
         } else if (value === 'carto') {
-          currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
             subdomains: 'abcd',
             maxZoom: 20

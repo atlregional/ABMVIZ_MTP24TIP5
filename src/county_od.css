@@ -23,7 +23,21 @@
 }
 
 #countyOdMap {
-  min-height: 650px;
+  min-height: 700px;
+}
+
+#countyOdTableContainer {
+  min-height: 700px;
+}
+
+#countyOdTableContainer .table-responsive {
+  max-height: 640px;
+  overflow: auto;
+}
+
+#countyOdTableContainer th,
+#countyOdTableContainer td {
+  white-space: nowrap;
 }
 
 .county-desirelines {
