@@ -11,8 +11,8 @@
 	<script>
 		d3.csv("data/scenarios.csv", function (data) {
 			$.each(data, function (key, value) {
-				// keep the link target as the scenario key but show the Header text
-				$("#scenarios").append("<li><a href='src/index.html?scenario=" + value["Scenario"] + "'>" + value["Header"] + "</a></li>");
+				// keep the link target as the scenario key but show the Description text
+				$("#scenarios").append("<li><a href='src/index.html?scenario=" + value["Scenario"] + "'>" + value["Description"] + "</a></li>");
 			});
 		});
 	</script>
