@@ -455,10 +455,9 @@ var barchart_and_map = (function () {
 			});
 			//var stamenTileLayer = new L.StamenTileLayer("toner-lite"); //B&W stylized background map
 			//map.addLayer(stamenTileLayer);
-			var underlyingMapLayer = L.tileLayer('//stamen-tiles-{s}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}.png', {
-				updateWhenIdle: true,
-				unloadInvisibleFiles: true,
-				reuseTiles: true,
+			var underlyingMapLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+				maxZoom: 19,
 				opacity: 1.0
 			});
 			underlyingMapLayer.addTo(map);
