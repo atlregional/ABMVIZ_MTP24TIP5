@@ -746,24 +746,6 @@ var overview = (function (d3, abmviz_utilities) {
       seriesPaths[d.scenario] = path;
     });
 
-    // Label only the single global peak across all years - never one per point.
-    var globalPeak = null;
-    data.forEach(function (d) {
-      (hourlyByScenario[d.scenario] || []).forEach(function (p) {
-        if (!globalPeak || p.quantity > globalPeak.quantity) {
-          globalPeak = { period: p.period, timeLabel: p.timeLabel, quantity: p.quantity, scenario: d.scenario };
-        }
-      });
-    });
-
-    if (globalPeak) {
-      g.append('text')
-        .attr('class', 'ov-total-label')
-        .attr('x', xCenter(globalPeak.period))
-        .attr('y', y(globalPeak.quantity) - 12)
-        .text('Peak ' + globalPeak.timeLabel + ' (' + shortAxisLabel(globalPeak.scenario) + '): ' + compactNumber(globalPeak.quantity));
-    }
-
     var hoverMarkers = g.append('g').attr('class', 'ov-hover-markers');
 
     // Hover hit target per half-hour period, shared across all series.
