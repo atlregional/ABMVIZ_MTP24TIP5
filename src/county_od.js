@@ -522,11 +522,13 @@
       var map = L.map(containerID).setView([33.792902, -84.349885], 8);
       window.countyOdMapInstance = map;
 
-      currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution:  '&copy; OpenStreetMap contributors &copy; CARTO',
-        maxZoom: 20,
-        subdomains: 'abcd'
-      }).addTo(map);
+      currentTileLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+          maxZoom: 16
+        }
+      ).addTo(map);
 
       if (L.Control && L.Control.Fullscreen) {
         map.addControl(new L.Control.Fullscreen());
@@ -810,11 +812,13 @@
         }
 
         if (value === 'carto') {
-          currentTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
-          });
+          currentTileLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            {
+              attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+              maxZoom: 16
+            }
+          );
         }
 
           else if (value === 'osm') {
